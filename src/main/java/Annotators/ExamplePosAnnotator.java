@@ -11,7 +11,9 @@ import org.cleartk.ml.CleartkSequenceAnnotator;
 import org.cleartk.ml.Feature;
 import org.cleartk.ml.Instances;
 import org.cleartk.ml.feature.extractor.CleartkExtractor;
+import org.cleartk.ml.feature.extractor.CoveredTextExtractor;
 import org.cleartk.ml.feature.extractor.FeatureExtractor1;
+import org.cleartk.ml.feature.function.*;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -26,7 +28,49 @@ public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
 
     private FeatureExtractor1<Token> tokenFeatureExtractor;
 
-    private CleartkExtractor contextFeatureExtractor;
+    private CleartkExtractor<Token, Token> contextFeatureExtractor;
+
+
+    /**
+     * The initialize method is used to initialize feature extractors (as well as feature extractor functions) and reading
+     * parameters as necessary from the UIMA Context.
+     *
+     * @param context the UIMA context
+     * @throws ResourceInitializationException
+     */
+    @Override
+    public void initialize(UimaContext context) throws ResourceInitializationException {
+        super.initialize(context);
+
+        // create a function feature extractor that creates features corresponding to the token
+        // Note the difference between feature extractors and feature functions here. Feature extractors take an Annotation
+        // from the JCas and extract features from it. Feature functions take the features produced by the feature extractor
+        // and generate new features from the old ones. Since feature functions don’t need to look up information in the JCas,
+        // they may be more efficient than feature extractors. So, the e.g. the CharacterNgramFeatureFunction simply extract
+        // suffixes from the text returned by the CoveredTextExtractor.
+        this.tokenFeatureExtractor = new FeatureFunctionExtractor<Token>(
+                // the FeatureExtractor that takes the token annotation from the JCas and produces the covered text
+                new CoveredTextExtractor<Token>(),
+                // feature function that produces the lower cased word (based on the output of the CoveredTextExtractor)
+                new LowerCaseFeatureFunction(),
+                // feature function that produces the capitalization type of the word (e.g. all uppercase, all lowercase...)
+                new CapitalTypeFeatureFunction(),
+                // feature function that produces the numeric type of the word (numeric, alphanumeric...)
+                new NumericTypeFeatureFunction(),
+                // feature function that produces the suffix of the word as character bigram (last two chars of the word)
+                new CharacterNgramFeatureFunction(CharacterNgramFeatureFunction.Orientation.RIGHT_TO_LEFT, 0, 2),
+                // feature function that produces the suffix of the word as character trigram (last three chars of the word)
+                new CharacterNgramFeatureFunction(CharacterNgramFeatureFunction.Orientation.RIGHT_TO_LEFT, 0, 3));
+
+        // create a feature extractor that extracts the surrounding token texts (within the same sentence)
+        this.contextFeatureExtractor = new CleartkExtractor<Token, Token>(Token.class,
+                // the FeatureExtractor that takes the token annotation from the JCas and produces the covered text
+                new CoveredTextExtractor<Token>(),
+                // also include the two preceding words
+                new CleartkExtractor.Preceding(2),
+                // and the two following words
+                new CleartkExtractor.Following(2));
+    }
 
     /**
      * The process method defines how features and labels are extracted from the annotations of a JCas, and how
@@ -57,7 +101,7 @@ public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
                 // add the extracted features of the token to the list of features for all tokens
                 tokenFeatureLists.add(tokenFeatures);
 
-                // add the expected POS tag (= label) to the list of POS tags of the token if we are in training mode
+                // if we are in training mode add the expected POS tag (= label) to the list of POS tags of the token
                 if (this.isTraining())
                     tokenOutcomes.add(token.getPos());
             }
@@ -66,7 +110,7 @@ public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
             if (this.isTraining())
                 this.dataWriter.write(Instances.toInstances(tokenOutcomes, tokenFeatureLists));
 
-            // for classification, set the tokens POS tags from the classifier output
+                // for classification, set the tokens POS tags from the classifier output
             else {
                 // classify / predict the POS tags of all tokens in the sentence by using the tokensFeatureLists
                 List<String> predictedPosTags = this.classifier.classify(tokenFeatureLists);
@@ -77,18 +121,6 @@ public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
                     tokensIter.next().setPos(outcome);
             }
         }
-    }
-
-    /**
-     * The initialize method is typically used to initialize feature extractors and reading parameters as necessary
-     * from the UIMA Context.
-     *
-     * @param context the UIMA context
-     * @throws ResourceInitializationException
-     */
-    @Override
-    public void initialize(UimaContext context) throws ResourceInitializationException {
-        super.initialize(context);
     }
 }
 
