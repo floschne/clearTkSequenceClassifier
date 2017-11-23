@@ -1,7 +1,9 @@
 package Annotators;
 
 import org.apache.uima.UimaContext;
+import org.apache.uima.analysis_engine.AnalysisEngineDescription;
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
+import org.apache.uima.fit.factory.AnalysisEngineFactory;
 import org.apache.uima.fit.type.Sentence;
 import org.apache.uima.fit.type.Token;
 import org.apache.uima.fit.util.JCasUtil;
@@ -14,6 +16,12 @@ import org.cleartk.ml.feature.extractor.CleartkExtractor;
 import org.cleartk.ml.feature.extractor.CoveredTextExtractor;
 import org.cleartk.ml.feature.extractor.FeatureExtractor1;
 import org.cleartk.ml.feature.function.*;
+import org.cleartk.ml.jar.DefaultDataWriterFactory;
+import org.cleartk.ml.jar.DirectoryDataWriterFactory;
+import org.cleartk.ml.jar.GenericJarClassifierFactory;
+import org.cleartk.ml.opennlp.maxent.MaxentStringOutcomeDataWriter;
+import org.cleartk.ml.viterbi.DefaultOutcomeFeatureExtractor;
+import org.cleartk.ml.viterbi.ViterbiDataWriterFactory;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -25,6 +33,8 @@ import java.util.List;
  * Generic output type is String because the outcome of the classifier will be strings corresponding to part-of-speech tags
  */
 public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
+
+    public static final String DEFAULT_OUTPUT_DIRECTORY = "tmp/pos";
 
     private FeatureExtractor1<Token> tokenFeatureExtractor;
 
@@ -121,6 +131,29 @@ public class ExamplePosAnnotator extends CleartkSequenceAnnotator<String> {
                     tokensIter.next().setPos(outcome);
             }
         }
+    }
+    public static AnalysisEngineDescription getClassifierDescription(String modelFileName)
+            throws ResourceInitializationException {
+        return AnalysisEngineFactory.createEngineDescription(
+                ExamplePosAnnotator.class,
+                GenericJarClassifierFactory.PARAM_CLASSIFIER_JAR_PATH,
+                modelFileName);
+    }
+
+    public static AnalysisEngineDescription getWriterDescription(String outputDirectory)
+            throws ResourceInitializationException {
+        return AnalysisEngineFactory.createEngineDescription(
+                ExamplePosAnnotator.class,
+                CleartkSequenceAnnotator.PARAM_DATA_WRITER_FACTORY_CLASS_NAME,
+                ViterbiDataWriterFactory.class.getName(),
+                DirectoryDataWriterFactory.PARAM_OUTPUT_DIRECTORY,
+                outputDirectory,
+                ViterbiDataWriterFactory.PARAM_DELEGATED_DATA_WRITER_FACTORY_CLASS,
+                DefaultDataWriterFactory.class.getName(),
+                DefaultDataWriterFactory.PARAM_DATA_WRITER_CLASS_NAME,
+                MaxentStringOutcomeDataWriter.class.getName(),
+                ViterbiDataWriterFactory.PARAM_OUTCOME_FEATURE_EXTRACTOR_NAMES,
+                new String[] { DefaultOutcomeFeatureExtractor.class.getName() });
     }
 }
 
